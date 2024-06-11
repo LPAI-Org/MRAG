@@ -167,6 +167,15 @@ def parse_args():
         help='Layers to target for the attention heads.'
     )
     embed_parser.add_argument(
+        '-m',
+        '--model',
+        type=str,
+        nargs='?',
+        choices=['Salesforce/SFR-Embedding-Mistral', 'intfloat/e5-mistral-7b-instruct', 'Alibaba-NLP/gte-Qwen1.5-7B-instruct'],
+        default='Salesforce/SFR-Embedding-Mistral',
+        help='Embedding model to use.'
+    )
+    embed_parser.add_argument(
         '-o',
         '--output',
         type=str,
@@ -352,6 +361,7 @@ def handle_query_gen(args) -> list[Query]:
 def handle_embedding(args) -> tuple[list[ArticleEmbeddings], list[QueryEmbeddings]]:
     return generate_embeddings(
         article_path=args.document_path,
+        model_name=args.model,
         query_path=args.query_path,
         target_layers=set(args.layers),
         export_path=args.output

@@ -99,9 +99,9 @@ class FusionQueryEmbeddings(QueryEmbeddings):
     fusion_embeddings: list[FullEmbeddings]
 
 
-class EmbeddingModel:
+class AbstractEmbeddingModel:
     """
-    Class that defines the interface for the Salesforce/SFR-Embedding-Mistral embedding model.
+    Abstract base class that defines the interface for the embedding models.
     """
     class CachingModule(torch.nn.Module):
         """
@@ -130,24 +130,47 @@ class EmbeddingModel:
             self.last_input = x
             return self._module.forward(x)
 
-    def __init__(self, target_layers: Optional[set[int]], device: str) -> None:
+    def __init__(self, model_name: str, target_layers: Optional[set[int]], device: str) -> None:
         """
         Initialize the embedding model.
 
+        :param model_name: Name of the embedding model to use.
+        :type model_name: str
         :param target_layers: Layers to target.
         :type target_layers: Optional[set[int]]
         :param device: The device to load the model on.
         :type device: str
         """
-        self._tokenizer = AutoTokenizer.from_pretrained("Salesforce/SFR-Embedding-Mistral")
+        self._tokenizer = AutoTokenizer.from_pretrained(model_name)
         self._model = AutoModel.from_pretrained(
-            "Salesforce/SFR-Embedding-Mistral",
+            model_name,
             device_map=device
         )
         self.target_layers = target_layers or {len(self._model.layers) - 1}
 
         for layer in self._model.layers:
             layer.self_attn.o_proj = self.CachingModule(layer.self_attn.o_proj)
+
+
+    @abstractmethod
+    def generate_embeddings(self, text: str) -> FullEmbeddings:
+        """
+        Generate embeddings (standard embedding, attention head embeddings) for the input text.
+
+        :param text: Input text.
+        :type text: str
+        :return: Embeddings.
+        :rtype: FullEmbeddings
+        """
+        pass
+
+
+class SFREmbeddingMistral(AbstractEmbeddingModel):
+    """
+    The SFREmbeddingMistral class handles interactions with the SFR Embedding Mistral model using the provided configuration.
+
+    Inherits from the AbstractEmbeddingModel class and implements its abstract methods.
+    """
 
     def generate_embeddings(self, text: str) -> FullEmbeddings:
         """
@@ -358,6 +381,7 @@ def load_embeddings(file_path: str) -> tuple[list[ArticleEmbeddings], list[Query
 
 def generate_embeddings(
         article_path: str,
+        model_name: str,
         query_path: str,
         target_layers: Optional[set[int]],
         export_path: str
@@ -367,6 +391,8 @@ def generate_embeddings(
 
     :param article_path: Path to the JSON file containing the dataset.
     :type article_path: str
+    :param model_name: Name of the embedding model to use.
+    :type model_name: str
     :param query_path: Path to the JSON file containing the queries.
     :type query_path: str
     :param target_layers: Layers to target for the attention head embeddings.
@@ -404,7 +430,10 @@ def generate_embeddings(
         return article_embeddings, query_embeddings
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = EmbeddingModel(target_layers, device)
+    if model_name == "Salesforce/SFR-Embedding-Mistral":
+        model = SFREmbeddingMistral(model_name, target_layers, device)
+    else:
+        raise Exception(f"{model_name} is not supported as an embedding model.")
 
     try:
         for article_emb in embed_articles(articles, model):
